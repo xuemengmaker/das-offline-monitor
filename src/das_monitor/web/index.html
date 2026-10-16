@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DAS 离线回放监测</title>
+    <style>
+      :root { font-family: system-ui, "Microsoft YaHei", sans-serif; color: #172033; background: #f4f7fb; }
+      body { max-width: 1050px; margin: 0 auto; padding: 28px; }
+      h1 { margin-bottom: 6px; } .note { color: #526176; }
+      .card { margin: 18px 0; padding: 20px; background: white; border-radius: 12px; box-shadow: 0 2px 12px #17203312; }
+      label { display: block; margin-top: 12px; font-weight: 600; } input, select, button { font: inherit; padding: 9px; border-radius: 6px; border: 1px solid #cbd5e1; }
+      input, select { width: 100%; box-sizing: border-box; margin-top: 6px; } button { margin-top: 18px; background: #155eef; color: white; border: 0; cursor: pointer; }
+      button:disabled { background: #94a3b8; } pre { overflow: auto; padding: 14px; background: #0f172a; color: #e2e8f0; border-radius: 8px; }
+      .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; } .warning { color: #9a3412; }
+      @media (max-width: 600px) { .grid { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <h1>DAS 离线回放监测与自动背景分级预警</h1>
+    <p class="note">本地演示系统：只读历史 TDMS 数据，结果为单文件窗口初筛，不代表最终泄漏结论。</p>
+    <section class="card">
+      <h2>创建分析任务</h2>
+      <label>TDMS 历史文件
+        <select id="file"><option>正在加载文件列表…</option></select>
+      </label>
+      <div class="grid">
+        <label>起始采样点<input id="start" type="number" value="0" min="0" /></label>
+        <label>读取采样点数<input id="samples" type="number" value="10000" min="100" max="50000" /></label>
+        <label>起始通道（1 起）<input id="channelStart" type="number" value="1" min="1" /></label>
+        <label>结束通道<input id="channelEnd" type="number" value="24" min="1" max="64" /></label>
+      </div>
+      <button id="submit">创建后台分析任务</button>
+      <p id="state" class="note"></p>
+    </section>
+    <section class="card">
+      <h2>任务结果</h2>
+      <p class="warning">面试说明：HTTP 202 表示“任务已受理”；随后轮询任务状态，直到 completed 或 failed。</p>
+      <pre id="result">尚未创建任务。</pre>
+    </section>
+    <section class="card">
+      <h2>通道 RMS 概览</h2>
+      <p class="note">蓝色柱为通道 RMS；橙色虚线为本窗口中位数。黄色/橙色/红色候选通道用相应颜色标记。</p>
+      <div id="rmsChart"></div>
+    </section>
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+    <script>
+      const file = document.querySelector('#file'); const state = document.querySelector('#state'); const result = document.querySelector('#result');
+      const number = id => Number(document.querySelector(id).value);
+      async function loadFiles() {
+        const response = await fetch('/api/v1/tdms/files?limit=100'); const body = await response.json();
+        file.replaceChildren(...body.files.map(item => new Option(`${item.relative_path} (${(item.bytes / 1024 / 1024).toFixed(1)} MB)`, item.relative_path)));
+      }
+      function renderChart(job) {
+        if (job.status !== 'completed' || !job.result) return;
+        const metrics = job.result.channel_metrics;
+        const colors = metrics.map(item => ({normal: '#2563eb', yellow: '#eab308', orange: '#f97316', red: '#dc2626'}[item.level]));
+        Plotly.newPlot('rmsChart', [{type: 'bar', x: metrics.map(item => item.channel), y: metrics.map(item => item.rms), marker: {color: colors}, name: 'RMS'}], {
+          margin: {t: 20}, xaxis: {title: '逻辑通道'}, yaxis: {title: 'RMS'},
+          shapes: [{type: 'line', x0: metrics[0].channel, x1: metrics.at(-1).channel, y0: job.result.summary.median_rms, y1: job.result.summary.median_rms, line: {color: '#f97316', dash: 'dash'}}]
+        }, {responsive: true, displaylogo: false});
+      }
+      async function poll(jobId) {
+        const response = await fetch(`/api/v1/analysis-jobs/${jobId}`); const job = await response.json();
+        state.textContent = `任务 ${job.job_id}：${job.status}`; result.textContent = JSON.stringify(job, null, 2); renderChart(job);
+        if (job.status === 'queued' || job.status === 'running') setTimeout(() => poll(jobId), 500);
+      }
+      function readableError(detail) {
+        if (Array.isArray(detail)) {
+          return detail.map(item => `${item.loc?.slice(1).join(' → ') || '请求'}：${item.msg}`).join('；');
+        }
+        return String(detail || '创建任务失败');
+      }
+      document.querySelector('#submit').addEventListener('click', async () => {
+        const button = document.querySelector('#submit'); button.disabled = true;
+        try {
+          const response = await fetch('/api/v1/analysis-jobs', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({
+            relative_path: file.value, start_sample: number('#start'), n_samples: number('#samples'), channel_start: number('#channelStart'), channel_end: number('#channelEnd')
+          })});
+          const job = await response.json(); if (!response.ok) throw new Error(readableError(job.detail)); poll(job.job_id);
+        } catch (error) { state.textContent = `错误：${error.message}`; } finally { button.disabled = false; }
+      });
+      loadFiles().catch(error => { file.replaceChildren(new Option('读取数据目录失败')); state.textContent = error.message; });
+    </script>
+  </body>
+</html>
