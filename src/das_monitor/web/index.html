@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>DAS 离线回放监测</title>
+    <title>DAS 管道泄漏风险离线回放</title>
     <style>
       :root { font-family: system-ui, "Microsoft YaHei", sans-serif; color: #172033; background: #f4f7fb; }
       body { max-width: 1050px; margin: 0 auto; padding: 28px; }
@@ -17,8 +17,8 @@
     </style>
   </head>
   <body>
-    <h1>DAS 离线回放监测与自动背景分级预警</h1>
-    <p class="note">本地演示系统：只读历史 TDMS 数据，结果为单文件窗口初筛，不代表最终泄漏结论。</p>
+    <h1>DAS 管道泄漏风险离线回放与自动背景分级预警</h1>
+    <p class="note">本地演示系统：只读历史 TDMS 数据；以幅值、局部对比、2–120 Hz 频谱和相邻通道相干性进行风险初筛，不代表最终泄漏结论。</p>
     <section class="card">
       <h2>创建分析任务</h2>
       <label>TDMS 历史文件
@@ -36,22 +36,29 @@
         <label>最少连续候选窗口数<input id="minPersistent" type="number" value="2" min="2" max="10" /></label>
       </div>
       <button id="persistence">创建持续性预警任务</button>
-      <p class="note">持续性任务会分析多个时间窗口；同一通道至少在指定数量的窗口中成为候选，才输出黄/橙/红预警。</p>
+      <p class="note">窗口持续性：同一通道至少在连续指定窗口中成为候选，才输出黄/橙/红预警。</p>
+      <div class="grid">
+        <label>连续 TDMS 文件数<input id="files" type="number" value="3" min="2" max="10" /></label>
+        <label>最少连续候选文件数<input id="minPersistentFiles" type="number" value="2" min="2" max="10" /></label>
+      </div>
+      <button id="filePersistence">创建跨文件持续性预警任务</button>
+      <p class="note">跨文件持续性：从当前文件开始，按同目录文件名顺序读取连续 TDMS 文件；用于离线回放验证风险是否重复出现。</p>
       <p id="state" class="note"></p>
     </section>
     <section class="card">
       <h2>任务结果</h2>
       <p class="warning">面试说明：HTTP 202 表示“任务已受理”；随后轮询任务状态，直到 completed 或 failed。</p>
       <pre id="result">尚未创建任务。</pre>
+      <a id="export" hidden>下载本次逐通道 CSV</a>
     </section>
     <section class="card">
       <h2>通道 RMS 概览</h2>
-      <p class="note">蓝色柱为通道 RMS；橙色虚线为本窗口中位数。黄色/橙色/红色候选通道用相应颜色标记。</p>
+      <p class="note">蓝色柱为通道 RMS；橙色虚线为本窗口中位数。黄色/橙色/红色仅表示通过多特征初筛的风险候选。</p>
       <div id="rmsChart"></div>
     </section>
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
     <script>
-      const file = document.querySelector('#file'); const state = document.querySelector('#state'); const result = document.querySelector('#result');
+      const file = document.querySelector('#file'); const state = document.querySelector('#state'); const result = document.querySelector('#result'); const exportLink = document.querySelector('#export');
       const number = id => Number(document.querySelector(id).value);
       async function loadFiles() {
         const response = await fetch('/api/v1/tdms/files?limit=100'); const body = await response.json();
@@ -69,6 +76,9 @@
       async function poll(jobId) {
         const response = await fetch(`/api/v1/analysis-jobs/${jobId}`); const job = await response.json();
         state.textContent = `任务 ${job.job_id}：${job.status}`; result.textContent = JSON.stringify(job, null, 2); renderChart(job);
+        const canExport = job.status === 'completed' && Array.isArray(job.result?.channel_metrics);
+        exportLink.hidden = !canExport;
+        if (canExport) exportLink.href = `/api/v1/analysis-jobs/${job.job_id}/channel-metrics.csv`;
         if (job.status === 'queued' || job.status === 'running') setTimeout(() => poll(jobId), 500);
       }
       function readableError(detail) {
@@ -91,6 +101,11 @@
       document.querySelector('#persistence').addEventListener('click', async () => {
         await submitJob('/api/v1/persistence-jobs', document.querySelector('#persistence'), {
           n_windows: number('#windows'), min_persistent_windows: number('#minPersistent'), window_step_samples: number('#samples')
+        });
+      });
+      document.querySelector('#filePersistence').addEventListener('click', async () => {
+        await submitJob('/api/v1/file-persistence-jobs', document.querySelector('#filePersistence'), {
+          n_files: number('#files'), min_persistent_files: number('#minPersistentFiles')
         });
       });
       loadFiles().catch(error => { file.replaceChildren(new Option('读取数据目录失败')); state.textContent = error.message; });

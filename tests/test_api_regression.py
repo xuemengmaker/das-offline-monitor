@@ -55,6 +55,9 @@ def test_api_creates_and_completes_analysis_job(client_with_tdms):
     result = result_response.json()
     assert result["status"] == "completed"
     assert result["result"]["window"]["channel_count"] == 2
+    export_response = client_with_tdms.get(f"/api/v1/analysis-jobs/{job['job_id']}/channel-metrics.csv")
+    assert export_response.status_code == 200
+    assert "channel,rms,peak_abs" in export_response.text
 
 
 @allure.feature("DAS API 回归")
@@ -89,3 +92,17 @@ def test_api_creates_persistence_job(client_with_tdms):
     job = client_with_tdms.get(f"/api/v1/analysis-jobs/{response.json()['job_id']}").json()
     assert job["status"] == "completed"
     assert job["result"]["analysis_scope"] == "multi_window_persistence_screening"
+
+
+@allure.feature("DAS API 回归")
+@allure.story("跨文件持续性预警")
+def test_api_rejects_file_persistence_when_sequence_is_unavailable(client_with_tdms):
+    response = client_with_tdms.post(
+        "/api/v1/file-persistence-jobs",
+        json={**valid_payload(), "n_files": 2, "min_persistent_files": 2},
+    )
+
+    assert response.status_code == 202
+    job = client_with_tdms.get(f"/api/v1/analysis-jobs/{response.json()['job_id']}").json()
+    assert job["status"] == "failed"
+    assert "不足 2 个" in job["error"]

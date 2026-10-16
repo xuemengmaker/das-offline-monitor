@@ -20,6 +20,14 @@ class AnalysisRequest(BaseModel):
     channel_start: int = Field(default=1, ge=1)
     channel_end: int = Field(default=24, ge=1, le=64)
     background_fraction: float = Field(default=0.60, gt=0.1, lt=0.95)
+    local_radius: int = Field(default=2, ge=1, le=10)
+    rms_z_threshold: float = Field(default=2.5, gt=0)
+    local_ratio_threshold: float = Field(default=1.10, gt=1)
+    spectral_z_threshold: float = Field(default=2.0, gt=0)
+    guard_channels: int = Field(default=2, ge=0, le=10)
+    background_iterations: int = Field(default=3, ge=1, le=10)
+    frequency_low_hz: float = Field(default=2.0, ge=0)
+    frequency_high_hz: float = Field(default=120.0, gt=0)
 
     @field_validator("relative_path")
     @classmethod
@@ -35,6 +43,13 @@ class PersistenceRequest(AnalysisRequest):
     n_windows: int = Field(default=3, ge=2, le=10)
     window_step_samples: int | None = Field(default=None, ge=100, le=50_000)
     min_persistent_windows: int = Field(default=2, ge=2, le=10)
+
+
+class FilePersistenceRequest(AnalysisRequest):
+    """Analyse sequential TDMS files beginning with ``relative_path``."""
+
+    n_files: int = Field(default=3, ge=2, le=10)
+    min_persistent_files: int = Field(default=2, ge=2, le=10)
 
 
 class JobView(BaseModel):
