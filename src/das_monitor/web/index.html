@@ -87,7 +87,10 @@
           const alertCount = Array.isArray(job.result.alerts) ? job.result.alerts.length : 0;
           chartTitle.textContent = isFiles ? '跨文件回放概览' : '多窗口回放概览';
           chartNote.textContent = `柱状图为每个${isFiles ? '历史文件' : '时间窗口'}的风险候选数；最终持续性预警数为 ${alertCount}。0 表示本次没有通道同时满足多特征候选条件。`;
-          Plotly.newPlot(target, [{type: 'bar', x: labels, y: counts, marker: {color: counts.map(count => count ? '#f97316' : '#16a34a')}, name: '风险候选数', text: counts, textposition: 'auto'}], {
+          Plotly.newPlot(target, [
+            {type: 'bar', x: labels, y: counts, marker: {color: counts.map(count => count ? '#f97316' : '#16a34a')}, name: '风险候选数', text: counts, textposition: 'auto'},
+            {type: 'scatter', mode: 'markers+text', x: labels, y: counts, marker: {color: counts.map(count => count ? '#f97316' : '#16a34a'), size: 13}, text: counts.map(count => String(count)), textposition: 'top center', textfont: {color: '#166534'}, name: '候选数标记', hovertemplate: '%{x}<br>候选通道数：%{y}<extra></extra>'}
+          ], {
             margin: {t: 20}, xaxis: {title: isFiles ? '回放文件' : '时间窗口'}, yaxis: {title: '候选通道数', rangemode: 'tozero'},
             annotations: [{x: 0.5, y: 1.1, xref: 'paper', yref: 'paper', text: `最终持续性预警：${alertCount}`, showarrow: false, font: {color: alertCount ? '#dc2626' : '#16a34a', size: 15}}]
           }, {responsive: true, displaylogo: false});
