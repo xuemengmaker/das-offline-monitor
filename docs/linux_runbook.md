@@ -49,6 +49,25 @@ tail -f logs/das_monitor.log
 
 随后在浏览器打开 `report\allure-report\index.html`。`allure-results` 与 HTML 报告均是可再生测试产物，已被 Git 忽略。
 
+## 系统与性能冒烟验证
+
+服务已启动时，在 Windows PowerShell 执行：
+
+```powershell
+& 'D:\pytest_practice\简历\软件源码\das-monitor\scripts\system_smoke_test.ps1'
+```
+
+它从真实数据目录选取第一个 TDMS 文件，通过 HTTP 创建任务并轮询至完成，属于端到端系统冒烟测试。
+
+在 Ubuntu 中执行受限窗口性能观察：
+
+```bash
+cd "/mnt/d/pytest_practice/简历/软件源码/das-monitor"
+./.venv/bin/python scripts/performance_smoke.py --samples 10000 --channels 24 --max-seconds 30
+```
+
+该脚本只读取 `24 × 10000` 个数值，不会加载整份 TDMS；输出耗时用于同一台机器上的回归比较，而非通用性能结论。
+
 ## 面试中准确的表述
 
 “我在 Ubuntu/WSL 中运行 FastAPI 的 DAS 离线回放服务；原始 TDMS 数据放在只读挂载目录。接口创建异步分析任务，后台按通道读取受限窗口，计算 RMS 和基于 median/MAD 的 robust Z-score，任务状态和结果写入 SQLite，同时记录结构化日志。这个项目是历史数据回放与预警初筛演示，不是连接实际采集设备的现场实时系统。”

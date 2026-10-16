@@ -29,6 +29,14 @@ class AnalysisRequest(BaseModel):
         return value.replace("\\", "/")
 
 
+class PersistenceRequest(AnalysisRequest):
+    """A bounded sequence of windows; alerts require repeated candidates."""
+
+    n_windows: int = Field(default=3, ge=2, le=10)
+    window_step_samples: int | None = Field(default=None, ge=100, le=50_000)
+    min_persistent_windows: int = Field(default=2, ge=2, le=10)
+
+
 class JobView(BaseModel):
     job_id: str
     status: JobStatus

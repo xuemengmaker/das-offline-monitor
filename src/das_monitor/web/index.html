@@ -31,6 +31,12 @@
         <label>结束通道<input id="channelEnd" type="number" value="24" min="1" max="64" /></label>
       </div>
       <button id="submit">创建后台分析任务</button>
+      <div class="grid">
+        <label>连续窗口数<input id="windows" type="number" value="3" min="2" max="10" /></label>
+        <label>最少连续候选窗口数<input id="minPersistent" type="number" value="2" min="2" max="10" /></label>
+      </div>
+      <button id="persistence">创建持续性预警任务</button>
+      <p class="note">持续性任务会分析多个时间窗口；同一通道至少在指定数量的窗口中成为候选，才输出黄/橙/红预警。</p>
       <p id="state" class="note"></p>
     </section>
     <section class="card">
@@ -52,7 +58,7 @@
         file.replaceChildren(...body.files.map(item => new Option(`${item.relative_path} (${(item.bytes / 1024 / 1024).toFixed(1)} MB)`, item.relative_path)));
       }
       function renderChart(job) {
-        if (job.status !== 'completed' || !job.result) return;
+        if (job.status !== 'completed' || !job.result || !job.result.channel_metrics) return;
         const metrics = job.result.channel_metrics;
         const colors = metrics.map(item => ({normal: '#2563eb', yellow: '#eab308', orange: '#f97316', red: '#dc2626'}[item.level]));
         Plotly.newPlot('rmsChart', [{type: 'bar', x: metrics.map(item => item.channel), y: metrics.map(item => item.rms), marker: {color: colors}, name: 'RMS'}], {
@@ -71,14 +77,21 @@
         }
         return String(detail || '创建任务失败');
       }
-      document.querySelector('#submit').addEventListener('click', async () => {
-        const button = document.querySelector('#submit'); button.disabled = true;
+      async function submitJob(endpoint, button, extras = {}) {
+        button.disabled = true;
         try {
-          const response = await fetch('/api/v1/analysis-jobs', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({
-            relative_path: file.value, start_sample: number('#start'), n_samples: number('#samples'), channel_start: number('#channelStart'), channel_end: number('#channelEnd')
-          })});
+          const payload = {relative_path: file.value, start_sample: number('#start'), n_samples: number('#samples'), channel_start: number('#channelStart'), channel_end: number('#channelEnd'), ...extras};
+          const response = await fetch(endpoint, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
           const job = await response.json(); if (!response.ok) throw new Error(readableError(job.detail)); poll(job.job_id);
         } catch (error) { state.textContent = `错误：${error.message}`; } finally { button.disabled = false; }
+      }
+      document.querySelector('#submit').addEventListener('click', async () => {
+        await submitJob('/api/v1/analysis-jobs', document.querySelector('#submit'));
+      });
+      document.querySelector('#persistence').addEventListener('click', async () => {
+        await submitJob('/api/v1/persistence-jobs', document.querySelector('#persistence'), {
+          n_windows: number('#windows'), min_persistent_windows: number('#minPersistent'), window_step_samples: number('#samples')
+        });
       });
       loadFiles().catch(error => { file.replaceChildren(new Option('读取数据目录失败')); state.textContent = error.message; });
     </script>

@@ -75,3 +75,17 @@ def test_api_marks_out_of_range_window_as_failed_job(client_with_tdms):
     job = client_with_tdms.get(f"/api/v1/analysis-jobs/{response.json()['job_id']}").json()
     assert job["status"] == "failed"
     assert "采样窗口超过单通道长度 200" in job["error"]
+
+
+@allure.feature("DAS API 回归")
+@allure.story("持续性预警")
+def test_api_creates_persistence_job(client_with_tdms):
+    response = client_with_tdms.post(
+        "/api/v1/persistence-jobs",
+        json={**valid_payload(), "n_windows": 2, "window_step_samples": 100, "min_persistent_windows": 2},
+    )
+
+    assert response.status_code == 202
+    job = client_with_tdms.get(f"/api/v1/analysis-jobs/{response.json()['job_id']}").json()
+    assert job["status"] == "completed"
+    assert job["result"]["analysis_scope"] == "multi_window_persistence_screening"

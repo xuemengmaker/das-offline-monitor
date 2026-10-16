@@ -169,3 +169,76 @@ def analyse_window(
         "candidates": candidates,
         "limitation": "单文件窗口初筛，不能替代跨文件持续性判定、现场联调或最终泄漏结论。",
     }
+
+
+def analyse_persistence(
+    relative_path: str,
+    start_sample: int,
+    n_samples: int,
+    channel_start: int,
+    channel_end: int,
+    background_fraction: float,
+    n_windows: int,
+    window_step_samples: int | None,
+    min_persistent_windows: int,
+) -> dict[str, object]:
+    """Require a channel to recur across windows before emitting a graded alert."""
+    if min_persistent_windows > n_windows:
+        raise DataAccessError("min_persistent_windows 不能大于 n_windows")
+    step = window_step_samples or n_samples
+    windows: list[dict[str, object]] = []
+    channel_occurrences: dict[int, list[str]] = {}
+    severity_rank = {"normal": 0, "yellow": 1, "orange": 2, "red": 3}
+
+    for window_index in range(n_windows):
+        current_start = start_sample + window_index * step
+        result = analyse_window(
+            relative_path=relative_path,
+            start_sample=current_start,
+            n_samples=n_samples,
+            channel_start=channel_start,
+            channel_end=channel_end,
+            background_fraction=background_fraction,
+        )
+        candidates = result["candidates"]
+        windows.append(
+            {
+                "window_index": window_index + 1,
+                "start_sample": current_start,
+                "candidate_count": len(candidates),
+                "candidate_channels": [item["channel"] for item in candidates],
+            }
+        )
+        for candidate in candidates:
+            channel = int(candidate["channel"])
+            channel_occurrences.setdefault(channel, []).append(str(candidate["level"]))
+
+    alerts: list[dict[str, int | str]] = []
+    transient_candidates: list[dict[str, int | str]] = []
+    for channel, levels in sorted(channel_occurrences.items()):
+        highest_level = max(levels, key=lambda level: severity_rank[level])
+        record: dict[str, int | str] = {
+            "channel": channel,
+            "occurrences": len(levels),
+            "highest_single_window_level": highest_level,
+        }
+        if len(levels) >= min_persistent_windows:
+            record["level"] = highest_level
+            alerts.append(record)
+        else:
+            transient_candidates.append(record)
+
+    return {
+        "analysis_scope": "multi_window_persistence_screening",
+        "relative_path": relative_path,
+        "rule": {
+            "n_windows": n_windows,
+            "window_step_samples": step,
+            "min_persistent_windows": min_persistent_windows,
+            "meaning": "同一逻辑通道在至少指定数量的窗口中成为候选，才输出分级预警。",
+        },
+        "windows": windows,
+        "alerts": alerts,
+        "transient_candidates": transient_candidates,
+        "limitation": "仍为离线初筛；未包含跨文件时间轴、空间邻域一致性或现场确认。",
+    }
