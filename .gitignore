@@ -10,3 +10,4 @@ runtime/*.db
 runtime/*.json
 report/
 *.egg-info/
+*.inspect.ndjson
