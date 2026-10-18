@@ -35,3 +35,5 @@ cd "/mnt/d/pytest_practice/简历/软件源码/das-monitor"
 
 完整命令与面试口径见 [docs/linux_runbook.md](docs/linux_runbook.md)；算法和边界见 [docs/algorithm_and_limits.md](docs/algorithm_and_limits.md)。
 接口边界、示例和测试范围见 [docs/interface_contract_and_test_strategy.md](docs/interface_contract_and_test_strategy.md)。
+
+Postman 手工/回归接口用例集合位于 [postman/DAS_Offline_Monitor_API_Test.postman_collection.json](postman/DAS_Offline_Monitor_API_Test.postman_collection.json)：导入后在 Runner 中执行，可覆盖正常数据资产接入、任务异步状态、设备状态、路径安全和参数边界。

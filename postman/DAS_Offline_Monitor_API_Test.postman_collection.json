@@ -1,0 +1,322 @@
+{
+  "info": {
+    "_postman_id": "64232c8d-4a9d-4af4-b42d-4f7e7df70591",
+    "name": "DAS Offline Monitor API Test",
+    "description": "用于本地 DAS 离线回放监测软件的接口功能、契约和边界回归验证。运行前需启动 ./scripts/run_dev.sh；数据根目录需包含 00/Das_data_00-00-49.tdms。",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://127.0.0.1:8000"
+    },
+    {
+      "key": "tdms_path",
+      "value": "00/Das_data_00-00-49.tdms"
+    },
+    {
+      "key": "device_id",
+      "value": "DAS-COLLECTOR-LOCAL-001"
+    }
+  ],
+  "item": [
+    {
+      "name": "A. 正常业务链路",
+      "item": [
+        {
+          "name": "TC-API-001 服务健康检查",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/health"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('返回 HTTP 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('服务状态为 ok', function () { pm.expect(pm.response.json().status).to.eql('ok'); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "TC-API-002 获取允许使用的 TDMS 文件清单",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/tdms/files?limit=10"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('返回 HTTP 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('文件清单包含目标 TDMS', function () { const files = pm.response.json().files; pm.expect(files.some((file) => file.relative_path === pm.collectionVariables.get('tdms_path'))).to.eql(true); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "TC-API-003 登记 TDMS 数据资产并保存 asset_id",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"relative_path\": \"{{tdms_path}}\",\n  \"integrity_mode\": \"metadata\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/v1/data-assets/register"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('首次登记返回 201，重复登记返回 200', function () { pm.expect([200, 201]).to.include(pm.response.code); });",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('asset_id', body.asset_id);",
+                  "pm.test('返回可复用的数据资产 ID', function () { pm.expect(body.asset_id).to.match(/^asset-/); });",
+                  "pm.test('读取到逻辑通道元数据', function () { pm.expect(body.metadata.logical_channel_count).to.be.above(0); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "TC-API-004 采集端状态上报",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"device_id\": \"{{device_id}}\",\n  \"status\": \"online\",\n  \"channel_count\": 4000,\n  \"sampling_rate_hz\": 1000,\n  \"latest_relative_path\": \"{{tdms_path}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/v1/devices/heartbeats"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('状态上报被接收', function () { pm.response.to.have.status(202); });",
+                  "pm.test('设备状态为 online', function () { pm.expect(pm.response.json().status).to.eql('online'); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "TC-API-005 查询最近一次采集端状态",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/devices/{{device_id}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('返回 HTTP 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('设备 ID 与上报值一致', function () { pm.expect(pm.response.json().device_id).to.eql(pm.collectionVariables.get('device_id')); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "TC-API-006 以数据资产创建异步分析任务",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"data_asset_id\": \"{{asset_id}}\",\n  \"start_sample\": 0,\n  \"n_samples\": 1000,\n  \"channel_start\": 1,\n  \"channel_end\": 24,\n  \"background_fraction\": 0.6\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/v1/analysis-jobs"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('任务创建返回 202', function () { pm.response.to.have.status(202); });",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('job_id', body.job_id);",
+                  "pm.test('初始状态为 queued', function () { pm.expect(body.status).to.eql('queued'); });",
+                  "pm.test('任务绑定登记过的数据资产', function () { pm.expect(body.request.data_asset_id).to.eql(pm.collectionVariables.get('asset_id')); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "TC-API-007 查询异步分析任务状态",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/analysis-jobs/{{job_id}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('查询任务返回 HTTP 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('状态属于合法异步状态机', function () { pm.expect(['queued', 'running', 'completed', 'failed']).to.include(pm.response.json().status); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "TC-API-008 查询告警事件列表",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/alarm-events?limit=50"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('告警事件查询返回 HTTP 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('响应为事件数组', function () { pm.expect(pm.response.json()).to.be.an('array'); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "B. 异常与边界链路",
+      "item": [
+        {
+          "name": "TC-API-009 不存在的数据资产应被拒绝",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/data-assets/asset-not-exist"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('返回 404 而非内部错误', function () { pm.response.to.have.status(404); });",
+                  "pm.test('错误信息明确', function () { pm.expect(pm.response.json().detail).to.eql('数据资产不存在'); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "TC-API-010 路径穿越数据登记应被拒绝",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"relative_path\": \"../private.tdms\",\n  \"integrity_mode\": \"metadata\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/v1/data-assets/register"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('路径穿越请求返回 400', function () { pm.response.to.have.status(400); });",
+                  "pm.test('响应提示相对路径限制', function () { pm.expect(pm.response.json().detail).to.include('相对路径'); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "TC-API-011 超过最大采样窗口应在入参层拒绝",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"data_asset_id\": \"{{asset_id}}\",\n  \"start_sample\": 0,\n  \"n_samples\": 50001,\n  \"channel_start\": 1,\n  \"channel_end\": 24\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/v1/analysis-jobs"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('超过接口上限返回 422', function () { pm.response.to.have.status(422); });",
+                  "pm.test('错误定位到 n_samples', function () { pm.expect(JSON.stringify(pm.response.json())).to.include('n_samples'); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "TC-API-012 未提供输入来源应被拒绝",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"start_sample\": 0,\n  \"n_samples\": 1000,\n  \"channel_start\": 1,\n  \"channel_end\": 24\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/v1/analysis-jobs"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('缺少数据来源返回 422', function () { pm.response.to.have.status(422); });",
+                  "pm.test('错误说明输入来源必须明确', function () { pm.expect(JSON.stringify(pm.response.json())).to.include('relative_path'); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
