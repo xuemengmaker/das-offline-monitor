@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from itertools import pairwise
 from pathlib import Path, PurePosixPath
 
@@ -65,6 +66,28 @@ def read_metadata(relative_path: str) -> dict[str, object]:
             "storage_layout": "single_flattened_channel" if len(channels) == 1 and logical_channel_count > 1 else "one_tdms_channel_per_logical_channel",
             "channels": [f"{channel.group_name}/{channel.name}" for channel in channels[:10]],
         }
+
+
+def build_data_asset_manifest(relative_path: str, integrity_mode: str = "metadata") -> dict[str, object]:
+    """Validate a TDMS input and create a bounded, reproducible intake manifest.
+
+    ``metadata`` is the default because hashing a multi-GB historical replay file for
+    every UI click is wasteful. ``sha256`` is an explicit acceptance/archival check.
+    """
+    path = resolve_tdms_path(relative_path)
+    stat = path.stat()
+    integrity: dict[str, object] = {
+        "mode": integrity_mode,
+        "bytes": stat.st_size,
+        "modified_ns": stat.st_mtime_ns,
+    }
+    if integrity_mode == "sha256":
+        digest = hashlib.sha256()
+        with path.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+        integrity["sha256"] = digest.hexdigest()
+    return {"metadata": read_metadata(relative_path), "integrity": integrity}
 
 
 def _robust_z(values: np.ndarray, minimum_scale: float = 1e-12) -> np.ndarray:

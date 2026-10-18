@@ -11,7 +11,8 @@
 3. 用 median/MAD 的稳健统计与迭代剔除保护带学习背景通道，降低异常通道污染背景的风险；
 4. 仅当 RMS 异常、局部差异和频谱偏离同时满足阈值时，形成风险候选；相邻候选通道自动合并为空间通道区间；
 5. 支持同一文件多窗口持续性，以及连续 TDMS 文件持续性；只有重复出现且主频稳定的候选才升级为黄/橙/红预警；
-6. 异步任务状态保存至 SQLite；任务过程写入 Linux 日志；单文件任务可下载逐通道 CSV；pytest + Allure 覆盖核心规则与接口回归。
+6. 异步任务状态保存至 SQLite；任务过程写入 Linux 日志；单文件任务可下载逐通道 CSV；pytest + Allure 覆盖核心规则与接口回归；
+7. 支持 TDMS 数据资产接入清单、采集端状态上报（本地模拟契约）及持续性预警事件的 HTTP Webhook 投递与有限重试。
 
 ## 技术栈
 
@@ -33,3 +34,4 @@ cd "/mnt/d/pytest_practice/简历/软件源码/das-monitor"
 在 Windows 浏览器打开 `http://127.0.0.1:8000`。
 
 完整命令与面试口径见 [docs/linux_runbook.md](docs/linux_runbook.md)；算法和边界见 [docs/algorithm_and_limits.md](docs/algorithm_and_limits.md)。
+接口边界、示例和测试范围见 [docs/interface_contract_and_test_strategy.md](docs/interface_contract_and_test_strategy.md)。
