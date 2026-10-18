@@ -41,8 +41,9 @@
         <label>连续 TDMS 文件数<input id="files" type="number" value="3" min="2" max="10" /></label>
         <label>最少连续候选文件数<input id="minPersistentFiles" type="number" value="2" min="2" max="10" /></label>
       </div>
-      <button id="filePersistence">创建跨文件持续性预警任务</button>
-      <p class="note">跨文件持续性：从当前文件开始，按同目录文件名顺序读取连续 TDMS 文件；用于离线回放验证风险是否重复出现。</p>
+      <button id="filePersistence" disabled>创建跨文件持续性预警任务</button>
+      <p class="note">跨文件持续性：选择的是<b>起始文件</b>；系统从该文件开始，按同目录文件名顺序读取后续 TDMS 文件，用于离线回放验证风险是否在连续文件中重复出现。它不是实时在线持续监测。</p>
+      <p id="filePersistenceHint" class="note warning">正在检查同目录可用 TDMS 文件数…</p>
       <p id="state" class="note"></p>
     </section>
     <section class="card">
@@ -60,10 +61,38 @@
     <script>
       const file = document.querySelector('#file'); const state = document.querySelector('#state'); const result = document.querySelector('#result'); const exportLink = document.querySelector('#export');
       const chartTitle = document.querySelector('#chartTitle'); const chartNote = document.querySelector('#chartNote');
+      const filePersistenceButton = document.querySelector('#filePersistence'); const filePersistenceHint = document.querySelector('#filePersistenceHint');
+      let availableFiles = [];
       const number = id => Number(document.querySelector(id).value);
+      function sameDirectoryFiles(relativePath) {
+        const separator = relativePath.lastIndexOf('/');
+        const directory = separator >= 0 ? relativePath.slice(0, separator) : '';
+        return availableFiles.filter(item => {
+          const path = item.relative_path;
+          const pathSeparator = path.lastIndexOf('/');
+          return (pathSeparator >= 0 ? path.slice(0, pathSeparator) : '') === directory;
+        });
+      }
+      function updateFilePersistenceAvailability() {
+        const requested = number('#files');
+        const filesInDirectory = sameDirectoryFiles(file.value);
+        const startIndex = filesInDirectory.findIndex(item => item.relative_path === file.value);
+        const usableCount = startIndex < 0 ? 0 : filesInDirectory.length - startIndex;
+        const canRun = usableCount >= requested;
+        filePersistenceButton.disabled = !canRun;
+        if (canRun) {
+          filePersistenceHint.textContent = `当前起始文件所在目录有 ${filesInDirectory.length} 个 TDMS 文件；将从当前文件开始顺序回放 ${requested} 个文件。`;
+          filePersistenceHint.classList.remove('warning');
+        } else {
+          filePersistenceHint.textContent = `当前从所选文件开始仅有 ${usableCount} 个可用 TDMS 文件；跨文件回放需要 ${requested} 个。本次真实数据不能执行跨文件持续性演示。`;
+          filePersistenceHint.classList.add('warning');
+        }
+      }
       async function loadFiles() {
         const response = await fetch('/api/v1/tdms/files?limit=100'); const body = await response.json();
-        file.replaceChildren(...body.files.map(item => new Option(`${item.relative_path} (${(item.bytes / 1024 / 1024).toFixed(1)} MB)`, item.relative_path)));
+        availableFiles = body.files;
+        file.replaceChildren(...availableFiles.map(item => new Option(`${item.relative_path} (${(item.bytes / 1024 / 1024).toFixed(1)} MB)`, item.relative_path)));
+        updateFilePersistenceAvailability();
       }
       function renderChart(job) {
         if (job.status !== 'completed' || !job.result) return;
@@ -131,7 +160,13 @@
           n_files: number('#files'), min_persistent_files: number('#minPersistentFiles')
         });
       });
-      loadFiles().catch(error => { file.replaceChildren(new Option('读取数据目录失败')); state.textContent = error.message; });
+      file.addEventListener('change', updateFilePersistenceAvailability);
+      document.querySelector('#files').addEventListener('input', updateFilePersistenceAvailability);
+      loadFiles().catch(error => {
+        file.replaceChildren(new Option('读取数据目录失败'));
+        filePersistenceHint.textContent = '无法读取数据文件列表，不能执行跨文件持续性任务。';
+        state.textContent = error.message;
+      });
     </script>
   </body>
 </html>
